@@ -7,25 +7,45 @@ import { Button } from '../components/Button';
 
 export const WelcomeScreen = () => {
   const router = useRouter();
-  const params = useLocalSearchParams<{ firstName?: string; lastVisit?: string; totalVisits?: string; customerId?: string }>();
+  const params = useLocalSearchParams<{ firstName?: string; lastVisit?: string; totalVisits?: string; customerId?: string; phone?: string }>();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [checkinTime, setCheckinTime] = useState('');
   const [error, setError] = useState('');
+  const [displayLastVisit, setDisplayLastVisit] = useState(params.lastVisit || '');
 
   const handleCheckIn = async () => {
     setLoading(true);
     setError('');
     setMessage('');
+    setCheckinTime('');
 
     try {
       const response = await apiClient.post('/checkin', {
         businessId: APP_CONFIG.businessId,
         storeId: APP_CONFIG.storeId,
         customerId: params.customerId,
-        phone: '',
+        phone: params.phone || '',
       });
 
       setMessage(response.data.message || 'Check-in complete!');
+      if (response.data?.checkin?.checkedInAt) {
+        const checkedAt = new Date(response.data.checkin.checkedInAt);
+        if (!Number.isNaN(checkedAt.getTime())) {
+          setDisplayLastVisit(response.data.checkin.checkedInAt);
+          setCheckinTime(
+            checkedAt.toLocaleString([], {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true,
+            })
+          );
+        }
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to create check-in.');
     } finally {
@@ -37,10 +57,11 @@ export const WelcomeScreen = () => {
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>Welcome back, {params.firstName || 'friend'}!</Text>
-        <Text style={styles.subtitle}>Last visit: {params.lastVisit ? new Date(params.lastVisit).toLocaleDateString() : 'Soon'}</Text>
+        <Text style={styles.subtitle}>Last visit: {displayLastVisit ? new Date(displayLastVisit).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : 'Soon'}</Text>
         <Text style={styles.subtitle}>Loyalty visits: {params.totalVisits || '0'}</Text>
 
         {message ? <Text style={styles.success}>{message}</Text> : null}
+        {checkinTime ? <Text style={styles.success}>Checked in at: {checkinTime}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Button title="Check In" onPress={handleCheckIn} loading={loading} />

@@ -1,7 +1,9 @@
 export interface CustomerLookupResponse {
   customerExists: boolean;
+  lastCheckinAt?: string | null;
   customer?: {
-    customerId: string;
+    _id?: string;
+    customerId?: string;
     firstName: string;
     lastName: string;
     phone: string;
@@ -33,4 +35,24 @@ export interface RegisterCustomerResponse {
     checkinId: string;
     checkedInAt: string;
   };
+}
+
+export interface StaffAuthResponse {
+  valid: boolean;
+  employee?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+}
+
+export interface TodayCheckedInCustomersResponse {
+  customers: Array<{
+    checkinId: string;
+    checkedInAt: string;
+    customerId: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+  }>;
 }
