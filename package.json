@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@react-native-picker/picker": "^2.11.4",
     "axios": "^1.18.1",
     "expo": "~57.0.2",
     "expo-constants": "~57.0.3",

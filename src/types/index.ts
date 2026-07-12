@@ -56,3 +56,34 @@ export interface TodayCheckedInCustomersResponse {
     phone: string;
   }>;
 }
+
+export interface Technician {
+  id: string;
+  firstName: string;
+  lastName: string;
+}
+
+export interface TechniciansResponse {
+  technicians: Technician[];
+}
+
+export interface InventoryItem {
+  id: string;
+  category: string;
+  itemName: string;
+  unitCost: number;
+}
+
+export interface InventoryResponse {
+  items: InventoryItem[];
+}
+
+export interface ServiceTypeItem {
+  id: string;
+  serviceType: string;
+  price: number;
+}
+
+export interface ServiceTypesResponse {
+  services: ServiceTypeItem[];
+}

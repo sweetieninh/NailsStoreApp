@@ -177,7 +177,7 @@ export const CheckInScreen = () => {
         pin: staffPin,
       });
 
-      router.push('/Order');
+      router.push('/TodayCustomerList');
     } catch (err: any) {
       setStaffError(err?.response?.data?.message || 'Invalid phone or PIN');
     } finally {
