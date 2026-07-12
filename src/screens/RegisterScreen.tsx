@@ -45,7 +45,16 @@ export const RegisterScreen = () => {
       });
 
       setMessage(response.data.message || 'Registration complete!');
-      router.push({ pathname: '/welcome', params: { firstName: form.firstName, lastVisit: response.data.checkin?.checkedInAt || new Date().toISOString(), totalVisits: '1', customerId: response.data.customer?.customerId || '' } });
+      router.push({
+        pathname: '/welcome',
+        params: {
+          firstName: form.firstName,
+          lastVisit: response.data.checkin?.checkedInAt || new Date().toISOString(),
+          totalVisits: '1',
+          checkinMessage: response.data.message || 'Registration complete!',
+          checkedInAt: response.data.checkin?.checkedInAt || '',
+        },
+      });
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to register customer.');
     } finally {

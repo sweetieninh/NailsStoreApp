@@ -1,4 +1,4 @@
-# NailsCustomerCheckIn
+# NailsStoreApp
 
 Expo React Native TypeScript app for the nail salon customer check-in flow.
 

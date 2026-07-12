@@ -1,5 +1,5 @@
 {
-  "name": "nailscustomercheckin",
+  "name": "nailsstoreapp",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
@@ -22,7 +22,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --web",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"

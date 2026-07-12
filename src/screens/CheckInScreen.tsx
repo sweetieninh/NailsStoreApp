@@ -5,7 +5,7 @@ import { APP_CONFIG } from '../constants/app';
 import { apiClient } from '../api/client';
 import { Button } from '../components/Button';
 import { TextInput } from '../components/TextInput';
-import { CustomerLookupResponse, StaffAuthResponse } from '../types';
+import { CheckInResponse, CustomerLookupResponse, StaffAuthResponse } from '../types';
 
 const formatPhone = (value: string) => {
   const digits = value.replace(/\D/g, '').slice(0, 10);
@@ -101,8 +101,27 @@ export const CheckInScreen = () => {
 
       if (response.data.customerExists && response.data.customer) {
         const resolvedCustomerId = response.data.customer.customerId || response.data.customer._id || '';
-        setSuccessMessage('Welcome back!');
-        router.push({ pathname: '/welcome', params: { firstName: response.data.customer.firstName, lastVisit: response.data.lastCheckinAt || '', totalVisits: String(response.data.customer.statistics?.totalVisits || 0), customerId: resolvedCustomerId, phone: response.data.customer.phone || '' } });
+        const checkinResponse = await apiClient.post<CheckInResponse>('/checkin', {
+          businessId: APP_CONFIG.businessId,
+          storeId: APP_CONFIG.storeId,
+          customerId: String(resolvedCustomerId),
+          phone: response.data.customer.phone || phone.replace(/\D/g, ''),
+        });
+
+        setSuccessMessage('Welcome back! You are checked in.');
+        const totalVisits = (checkinResponse.data.customer?.statistics?.totalVisits || response.data.customer.statistics?.totalVisits || 0) + 1;
+        router.push({
+          pathname: '/welcome',
+          params: {
+            firstName: response.data.customer.firstName,
+            lastVisit: response.data.lastCheckinAt || '',
+            totalVisits: String(totalVisits),
+            customerId: String(resolvedCustomerId),
+            phone: response.data.customer.phone || '',
+            checkinMessage: checkinResponse.data.message || 'Check-in complete!',
+            checkedInAt: checkinResponse.data.checkin?.checkedInAt || new Date().toISOString(),
+          },
+        });
       } else {
         setSuccessMessage('New customer detected.');
         router.push({ pathname: '/register', params: { phone: phone.replace(/\D/g, '') } });
