@@ -23,10 +23,12 @@ const formatStaffPhone = (value: string) => {
 
 const DEFAULT_STAFF_PHONE = '949-555-4001';
 const DEFAULT_STAFF_PIN = '1234';
+const DEFAULT_MANAGER_PHONE = '949-555-3001';
+const DEFAULT_MANAGER_PIN = '1234';
 
 export const CheckInScreen = () => {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'customer' | 'staff'>('customer');
+  const [activeTab, setActiveTab] = useState<'customer' | 'staff' | 'manager' | 'administrator'>('customer');
   const tabContentAnim = useRef(new Animated.Value(1)).current;
 
   const [phone, setPhone] = useState('');
@@ -55,8 +57,13 @@ export const CheckInScreen = () => {
   };
 
   const clearStaff = () => {
-    setStaffPhone(DEFAULT_STAFF_PHONE);
-    setStaffPin(DEFAULT_STAFF_PIN);
+    if (activeTab === 'manager') {
+      setStaffPhone(DEFAULT_MANAGER_PHONE);
+      setStaffPin(DEFAULT_MANAGER_PIN);
+    } else {
+      setStaffPhone(DEFAULT_STAFF_PHONE);
+      setStaffPin(DEFAULT_STAFF_PIN);
+    }
     setStaffActiveInput('phone');
     setStaffError('');
   };
@@ -134,17 +141,26 @@ export const CheckInScreen = () => {
   };
 
   const handleStaffPhoneChange = (value: string) => {
+    if (activeTab === 'manager') {
+      return;
+    }
     setStaffPhone(formatStaffPhone(value));
     if (staffError) setStaffError('');
   };
 
   const handleStaffPinChange = (value: string) => {
+    if (activeTab === 'manager') {
+      return;
+    }
     const pin = value.replace(/\D/g, '').slice(0, 8);
     setStaffPin(pin);
     if (staffError) setStaffError('');
   };
 
   const handleStaffKeyPress = (value: string | number) => {
+    if (activeTab === 'manager') {
+      return;
+    }
     if (value === '⌫') {
       if (staffActiveInput === 'phone') {
         setStaffPhone((prev) => formatStaffPhone(prev.slice(0, -1)));
@@ -170,14 +186,33 @@ export const CheckInScreen = () => {
     setStaffError('');
 
     try {
-      await apiClient.post<StaffAuthResponse>('/checkin/staff/auth', {
-        businessId: APP_CONFIG.businessId,
-        storeId: APP_CONFIG.storeId,
-        phone: staffPhone,
-        pin: staffPin,
-      });
+      const response = activeTab === 'manager'
+        ? await apiClient.post<StaffAuthResponse>('/checkin/manager/auth', {
+            businessId: APP_CONFIG.businessId,
+            storeId: APP_CONFIG.storeId,
+            phone: DEFAULT_MANAGER_PHONE,
+            pin: DEFAULT_MANAGER_PIN,
+          })
+        : await apiClient.post<StaffAuthResponse>('/checkin/staff/auth', {
+            businessId: APP_CONFIG.businessId,
+            storeId: APP_CONFIG.storeId,
+            phone: staffPhone,
+            pin: staffPin,
+          });
 
-      router.push('/TodayCustomerList');
+      if (activeTab === 'manager') {
+        router.push({
+          pathname: '/Reports',
+          params: {
+            firstName: response.data.employee?.firstName || 'Sarah',
+            lastName: response.data.employee?.lastName || 'Johnson',
+          },
+        });
+      } else if (activeTab === 'administrator') {
+        router.push('/Settings');
+      } else {
+        router.push('/TodayCustomerList');
+      }
     } catch (err: any) {
       setStaffError(err?.response?.data?.message || 'Invalid phone or PIN');
     } finally {
@@ -186,6 +221,20 @@ export const CheckInScreen = () => {
   };
 
   useEffect(() => {
+    if (activeTab === 'manager') {
+      setStaffPhone(DEFAULT_MANAGER_PHONE);
+      setStaffPin(DEFAULT_MANAGER_PIN);
+      setStaffActiveInput('phone');
+      setStaffError('');
+    }
+
+    if (activeTab === 'staff' || activeTab === 'administrator') {
+      setStaffPhone(DEFAULT_STAFF_PHONE);
+      setStaffPin(DEFAULT_STAFF_PIN);
+      setStaffActiveInput('phone');
+      setStaffError('');
+    }
+
     tabContentAnim.setValue(0);
     Animated.timing(tabContentAnim, {
       toValue: 1,
@@ -228,6 +277,22 @@ export const CheckInScreen = () => {
               Staff
             </Text>
           </Pressable>
+          <Pressable
+            style={[styles.tabButton, activeTab === 'manager' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('manager')}
+          >
+            <Text style={[styles.tabLabel, activeTab === 'manager' && styles.tabLabelActive]}>
+              Manager
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tabButton, activeTab === 'administrator' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('administrator')}
+          >
+            <Text style={[styles.tabLabel, activeTab === 'administrator' && styles.tabLabelActive]}>
+              Admin
+            </Text>
+          </Pressable>
         </View>
 
         <Animated.View style={contentAnimatedStyle}>
@@ -265,14 +330,27 @@ export const CheckInScreen = () => {
             </>
           ) : (
             <>
-            <Text style={styles.subtitle}>Staff sign in</Text>
+            <Text style={styles.subtitle}>
+              {activeTab === 'manager'
+                ? 'Manager sign in'
+                : activeTab === 'administrator'
+                  ? 'Administrator sign in'
+                  : 'Staff sign in'}
+            </Text>
 
             <TextInput
               value={staffPhone}
               onChangeText={handleStaffPhoneChange}
-              placeholder="Staff phone (555) 123-4567"
+              placeholder={
+                activeTab === 'manager'
+                  ? 'Manager phone 555-123-4567'
+                  : activeTab === 'administrator'
+                    ? 'Administrator phone 555-123-4567'
+                    : 'Staff phone 555-123-4567'
+              }
               keyboardType="phone-pad"
               maxLength={12}
+              editable={activeTab !== 'manager'}
               onFocus={() => setStaffActiveInput('phone')}
             />
 
@@ -283,6 +361,7 @@ export const CheckInScreen = () => {
               keyboardType="number-pad"
               maxLength={8}
               secureTextEntry
+              editable={activeTab !== 'manager'}
               onFocus={() => setStaffActiveInput('pin')}
             />
 
@@ -351,12 +430,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDEDF6',
     borderRadius: 14,
     padding: 4,
-    gap: 10,
+    gap: 4,
   },
   tabButton: {
     flex: 1,
     borderRadius: 10,
-    paddingVertical: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -368,7 +448,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   tabLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
     color: '#9CA3AF',
   },

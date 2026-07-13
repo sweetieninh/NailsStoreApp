@@ -6,8 +6,11 @@ import { apiClient } from '../api/client';
 import { Button } from '../components/Button';
 import { APP_CONFIG } from '../constants/app';
 import {
+  CheckoutResponse,
+  CustomerCartResponse,
   InventoryItem,
   InventoryResponse,
+  SaveCartResponse,
   ServiceTypeItem,
   ServiceTypesResponse,
   Technician,
@@ -24,7 +27,10 @@ export const CustomerOrderScreen = () => {
   const [nailArtCustomPrice, setNailArtCustomPrice] = useState('0');
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [savingCart, setSavingCart] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
 
   const customerFullName = useMemo(() => {
     const firstName = params.firstName || '';
@@ -32,12 +38,15 @@ export const CustomerOrderScreen = () => {
     return `${firstName} ${lastName}`.trim() || 'Customer';
   }, [params.firstName, params.lastName]);
 
+  const customerId = String(params.customerId || '');
+
   const loadScreenData = useCallback(async () => {
     setLoading(true);
     setError('');
+    setActionMessage('');
 
     try {
-      const [techniciansResponse, inventoryResponse, serviceTypesResponse] = await Promise.all([
+      const [techniciansResponse, inventoryResponse, serviceTypesResponse, cartResponse] = await Promise.all([
         apiClient.get<TechniciansResponse>('/checkin/technicians', {
           params: {
             businessId: APP_CONFIG.businessId,
@@ -56,6 +65,15 @@ export const CustomerOrderScreen = () => {
             storeId: APP_CONFIG.storeId,
           },
         }),
+        customerId
+          ? apiClient.get<CustomerCartResponse>('/checkin/cart', {
+              params: {
+                businessId: APP_CONFIG.businessId,
+                storeId: APP_CONFIG.storeId,
+                customerId,
+              },
+            })
+          : Promise.resolve({ data: { cart: null } } as { data: CustomerCartResponse }),
       ]);
 
       const techniciansList = techniciansResponse.data.technicians || [];
@@ -66,12 +84,31 @@ export const CustomerOrderScreen = () => {
 
       setInventoryItems(inventoryResponse.data.items || []);
       setServiceTypes(serviceTypesResponse.data.services || []);
+
+      const existingCart = cartResponse.data.cart;
+      if (existingCart) {
+        const restoredServiceIds = (existingCart.services || []).map((item) => item.serviceTypeId);
+        const restoredInventoryIds = (existingCart.inventoryItems || []).map((item) => item.inventoryId);
+        const nailArtService = (existingCart.services || []).find((item) => item.serviceType === 'Nail Art' && item.isCustomPrice);
+
+        setSelectedServiceIds(restoredServiceIds);
+        setSelectedInventoryIds(restoredInventoryIds);
+        if (existingCart.technicianId) {
+          setSelectedTechnicianId(existingCart.technicianId);
+        }
+        if (nailArtService) {
+          setNailArtCustomPrice(String(nailArtService.unitPrice));
+        }
+      } else {
+        setSelectedServiceIds([]);
+        setSelectedInventoryIds([]);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to load customer order data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [customerId]);
 
   const groupedInventory = useMemo(() => {
     const groups = new Map<string, InventoryItem[]>();
@@ -135,8 +172,105 @@ export const CustomerOrderScreen = () => {
     });
   };
 
-  const handleAddToCart = () => {};
-  const handleCheckout = () => {};
+  const buildSelectedPayload = () => {
+    const selectedServices = serviceTypes
+      .filter((item) => selectedServiceIds.includes(item.id))
+      .map((item) => {
+        const isNailArt = item.serviceType === 'Nail Art';
+        const parsedNailArt = Number.parseFloat(nailArtCustomPrice || '0');
+        const nailArtPrice = Number.isFinite(parsedNailArt) ? parsedNailArt : 0;
+        return {
+          serviceTypeId: item.id,
+          serviceType: item.serviceType,
+          unitPrice: isNailArt ? nailArtPrice : Number(item.price || 0),
+          isCustomPrice: isNailArt,
+        };
+      });
+
+    const selectedInventory = inventoryItems
+      .filter((item) => selectedInventoryIds.includes(item.id))
+      .map((item) => ({
+        inventoryId: item.id,
+        itemName: item.itemName,
+        unitPrice: Number(item.unitCost || 0),
+        category: item.category,
+      }));
+
+    return {
+      services: selectedServices,
+      inventoryItems: selectedInventory,
+      pricing: {
+        subtotal: totalAmount,
+        total: totalAmount,
+      },
+    };
+  };
+
+  const saveCartInternal = async (showSuccessMessage: boolean) => {
+    const payload = buildSelectedPayload();
+    const response = await apiClient.post<SaveCartResponse>('/checkin/cart/save', {
+      businessId: APP_CONFIG.businessId,
+      storeId: APP_CONFIG.storeId,
+      customerId,
+      customerFirstName: params.firstName || '',
+      customerLastName: params.lastName || '',
+      technicianId: selectedTechnicianId,
+      ...payload,
+    });
+
+    if (showSuccessMessage) {
+      setActionMessage(response.data.message || 'Cart saved successfully');
+    }
+  };
+
+  const handleSaveToCart = async () => {
+    if (!customerId) {
+      setError('Customer ID is missing. Please reselect customer.');
+      return;
+    }
+
+    setSavingCart(true);
+    setError('');
+    setActionMessage('');
+
+    try {
+      await saveCartInternal(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to save cart.');
+    } finally {
+      setSavingCart(false);
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (!customerId) {
+      setError('Customer ID is missing. Please reselect customer.');
+      return;
+    }
+
+    setCheckingOut(true);
+    setError('');
+    setActionMessage('');
+
+    try {
+      await saveCartInternal(false);
+      const response = await apiClient.post<CheckoutResponse>('/checkin/checkout', {
+        businessId: APP_CONFIG.businessId,
+        storeId: APP_CONFIG.storeId,
+        customerId,
+      });
+
+      setActionMessage(
+        response.data.order?.orderId
+          ? `Checkout completed. Order ID: ${response.data.order.orderId}`
+          : response.data.message || 'Checkout completed successfully'
+      );
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to complete checkout.');
+    } finally {
+      setCheckingOut(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -235,13 +369,24 @@ export const CustomerOrderScreen = () => {
         ) : null}
 
         <Text style={styles.totalAmount}>Total Amount: ${totalAmount.toFixed(2)}</Text>
+        {actionMessage ? <Text style={styles.success}>{actionMessage}</Text> : null}
 
         <View style={styles.actionsRow}>
           <View style={styles.actionButton}>
-            <Button title="Add to Cart" onPress={handleAddToCart} />
+            <Button
+              title="Save to Cart"
+              onPress={handleSaveToCart}
+              loading={savingCart}
+              disabled={checkingOut}
+            />
           </View>
           <View style={styles.actionButton}>
-            <Button title="Checkout" onPress={handleCheckout} />
+            <Button
+              title="Checkout"
+              onPress={handleCheckout}
+              loading={checkingOut}
+              disabled={savingCart}
+            />
           </View>
         </View>
       </View>
@@ -330,6 +475,10 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#D14343',
+    fontSize: 13,
+  },
+  success: {
+    color: '#2E8B57',
     fontSize: 13,
   },
   categoryBlock: {

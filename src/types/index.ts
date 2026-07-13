@@ -87,3 +87,68 @@ export interface ServiceTypeItem {
 export interface ServiceTypesResponse {
   services: ServiceTypeItem[];
 }
+
+export interface CustomerCartServiceItem {
+  serviceTypeId: string;
+  serviceType: string;
+  unitPrice: number;
+  isCustomPrice?: boolean;
+}
+
+export interface CustomerCartInventoryItem {
+  inventoryId: string;
+  itemName: string;
+  unitPrice: number;
+  category?: string;
+}
+
+export interface CustomerCart {
+  cartId: string;
+  businessId: string;
+  storeId: string;
+  customerId: string;
+  customerSnapshot?: {
+    firstName?: string;
+    lastName?: string;
+  };
+  technicianId?: string;
+  services: CustomerCartServiceItem[];
+  inventoryItems: CustomerCartInventoryItem[];
+  pricing: {
+    subtotal: number;
+    total: number;
+  };
+  currency?: string;
+  status: string;
+}
+
+export interface CustomerCartResponse {
+  cart: CustomerCart | null;
+}
+
+export interface SaveCartResponse {
+  message: string;
+  cart: CustomerCart | null;
+}
+
+export interface CheckoutResponse {
+  message: string;
+  order: {
+    orderId: string;
+  };
+}
+
+export type StoreReportType = 'today' | 'week' | 'month' | 'custom';
+
+export interface StoreReportResponse {
+  reportType: StoreReportType;
+  from: string;
+  to: string;
+  totalAmount: number;
+  technicianBreakdown: Array<{
+    technicianId: string;
+    firstName: string;
+    lastName: string;
+    subtotal: number;
+  }>;
+}
