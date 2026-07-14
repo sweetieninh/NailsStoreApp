@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput as RNTextInput, View } from 'react-native';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { apiClient } from '../api/client';
 import { Button } from '../components/Button';
@@ -18,6 +18,7 @@ import {
 } from '../types';
 
 export const CustomerOrderScreen = () => {
+  const router = useRouter();
   const params = useLocalSearchParams<{ customerId?: string; firstName?: string; lastName?: string }>();
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [serviceTypes, setServiceTypes] = useState<ServiceTypeItem[]>([]);
@@ -25,6 +26,9 @@ export const CustomerOrderScreen = () => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [selectedInventoryIds, setSelectedInventoryIds] = useState<string[]>([]);
   const [nailArtCustomPrice, setNailArtCustomPrice] = useState('0');
+  const [tipSelection, setTipSelection] = useState<'15' | '18' | '22' | '25' | 'custom'>('15');
+  const [customTipAmount, setCustomTipAmount] = useState('0');
+  const [doNotSaveOrder, setDoNotSaveOrder] = useState(true);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
   const [loading, setLoading] = useState(false);
   const [savingCart, setSavingCart] = useState(false);
@@ -133,7 +137,7 @@ export const CustomerOrderScreen = () => {
     return rows;
   }, [serviceTypes]);
 
-  const totalAmount = useMemo(() => {
+  const baseAmount = useMemo(() => {
     const selectedInventory = new Set(selectedInventoryIds);
     const inventoryTotal = inventoryItems.reduce((sum, item) => {
       if (!selectedInventory.has(item.id)) return sum;
@@ -153,6 +157,22 @@ export const CustomerOrderScreen = () => {
 
     return inventoryTotal + servicesTotal;
   }, [inventoryItems, nailArtCustomPrice, selectedInventoryIds, selectedServiceIds, serviceTypes]);
+
+  const tipAmount = useMemo(() => {
+    if (tipSelection === 'custom') {
+      const parsed = Number.parseFloat(customTipAmount || '0');
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    const percent = Number.parseFloat(tipSelection);
+    if (!Number.isFinite(percent)) {
+      return 0;
+    }
+
+    return (baseAmount * percent) / 100;
+  }, [baseAmount, customTipAmount, tipSelection]);
+
+  const totalAmount = useMemo(() => baseAmount + tipAmount, [baseAmount, tipAmount]);
 
   const toggleServiceItem = (id: string) => {
     setSelectedServiceIds((previous) => {
@@ -200,11 +220,26 @@ export const CustomerOrderScreen = () => {
       services: selectedServices,
       inventoryItems: selectedInventory,
       pricing: {
-        subtotal: totalAmount,
+        subtotal: baseAmount,
+        tipAmount,
         total: totalAmount,
       },
     };
   };
+
+  const selectedServicesForReceipt = useMemo(() => {
+    return serviceTypes
+      .filter((item) => selectedServiceIds.includes(item.id))
+      .map((item) => {
+        const isNailArt = item.serviceType === 'Nail Art';
+        const parsedNailArt = Number.parseFloat(nailArtCustomPrice || '0');
+        const nailArtPrice = Number.isFinite(parsedNailArt) ? parsedNailArt : 0;
+        return {
+          serviceType: item.serviceType,
+          price: isNailArt ? nailArtPrice : Number(item.price || 0),
+        };
+      });
+  }, [nailArtCustomPrice, selectedServiceIds, serviceTypes]);
 
   const saveCartInternal = async (showSuccessMessage: boolean) => {
     const payload = buildSelectedPayload();
@@ -253,18 +288,35 @@ export const CustomerOrderScreen = () => {
     setActionMessage('');
 
     try {
-      await saveCartInternal(false);
-      const response = await apiClient.post<CheckoutResponse>('/checkin/checkout', {
-        businessId: APP_CONFIG.businessId,
-        storeId: APP_CONFIG.storeId,
-        customerId,
-      });
+      if (!doNotSaveOrder) {
+        await saveCartInternal(false);
+        const response = await apiClient.post<CheckoutResponse>('/checkin/checkout', {
+          businessId: APP_CONFIG.businessId,
+          storeId: APP_CONFIG.storeId,
+          customerId,
+        });
 
-      setActionMessage(
-        response.data.order?.orderId
-          ? `Checkout completed. Order ID: ${response.data.order.orderId}`
-          : response.data.message || 'Checkout completed successfully'
-      );
+        setActionMessage(
+          response.data.order?.orderId
+            ? `Checkout completed. Order ID: ${response.data.order.orderId}`
+            : response.data.message || 'Checkout completed successfully'
+        );
+      } else {
+        setActionMessage('Checkout preview generated without saving to database.');
+      }
+
+      router.push({
+        pathname: '/PrintReceipt',
+        params: {
+          storeName: APP_CONFIG.storeName,
+          customerFirstName: params.firstName || '',
+          customerLastName: params.lastName || '',
+          services: JSON.stringify(selectedServicesForReceipt),
+          tipAmount: tipAmount.toFixed(2),
+          totalAmount: totalAmount.toFixed(2),
+          printedAt: new Date().toISOString(),
+        },
+      });
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to complete checkout.');
     } finally {
@@ -342,6 +394,30 @@ export const CustomerOrderScreen = () => {
           ))}
         </View>
 
+        <Text style={styles.label}>Tips</Text>
+        <View style={styles.tipPickerWrap}>
+          <Picker
+            selectedValue={tipSelection}
+            onValueChange={(value) => setTipSelection(String(value) as '15' | '18' | '22' | '25' | 'custom')}
+          >
+            <Picker.Item label="15%" value="15" />
+            <Picker.Item label="18%" value="18" />
+            <Picker.Item label="22%" value="22" />
+            <Picker.Item label="25%" value="25" />
+            <Picker.Item label="Custom Tip" value="custom" />
+          </Picker>
+        </View>
+
+        {tipSelection === 'custom' ? (
+          <RNTextInput
+            style={styles.tipInput}
+            value={customTipAmount}
+            onChangeText={(value) => setCustomTipAmount(value.replace(/[^0-9.]/g, ''))}
+            placeholder="Enter custom tip amount"
+            keyboardType="decimal-pad"
+          />
+        ) : null}
+
         <Text style={styles.label}>Inventory</Text>
         {groupedInventory.map((group) => (
           <View key={group.category} style={styles.categoryBlock}>
@@ -369,6 +445,12 @@ export const CustomerOrderScreen = () => {
         ) : null}
 
         <Text style={styles.totalAmount}>Total Amount: ${totalAmount.toFixed(2)}</Text>
+
+        <Pressable style={styles.checkboxRow} onPress={() => setDoNotSaveOrder((previous) => !previous)}>
+          <Text style={styles.checkbox}>{doNotSaveOrder ? '☑' : '☐'}</Text>
+          <Text style={styles.checkboxLabel}>Do not Save Order to database</Text>
+        </Pressable>
+
         {actionMessage ? <Text style={styles.success}>{actionMessage}</Text> : null}
 
         <View style={styles.actionsRow}>
@@ -426,6 +508,30 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#FFF9FD',
+  },
+  tipPickerWrap: {
+    alignSelf: 'flex-start',
+    width: '52%',
+    minWidth: 180,
+    maxWidth: 260,
+    borderWidth: 1,
+    borderColor: '#F3D4E6',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFF9FD',
+  },
+  tipInput: {
+    width: '52%',
+    minWidth: 180,
+    maxWidth: 260,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#2F2F2F',
+    backgroundColor: '#FFFFFF',
   },
   serviceGrid: {
     gap: 8,
@@ -510,6 +616,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#2F2F2F',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#374151',
+    fontWeight: '600',
   },
   empty: {
     color: '#6B7280',
