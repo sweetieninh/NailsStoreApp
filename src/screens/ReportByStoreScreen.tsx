@@ -4,7 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { APP_CONFIG } from '../constants/app';
 import { apiClient } from '../api/client';
 import { Button } from '../components/Button';
-import { StoreReportResponse, StoreReportType } from '../types';
+import { StoreReportResponse, StoreReportTreeNode, StoreReportType } from '../types';
 
 const REPORT_TYPE_OPTIONS: Array<{ label: string; value: StoreReportType }> = [
   { label: "Today's report", value: 'today' },
@@ -25,12 +25,12 @@ const formatDateTime = (value: string) => {
 
 export const ReportByStoreScreen = () => {
   const [reportType, setReportType] = useState<StoreReportType>('today');
-  const [showDetails, setShowDetails] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [reportData, setReportData] = useState<StoreReportResponse | null>(null);
+  const [expandedNodeIds, setExpandedNodeIds] = useState<string[]>([]);
 
   const dateInputPlaceholder = useMemo(() => 'YYYY-MM-DD', []);
 
@@ -44,18 +44,65 @@ export const ReportByStoreScreen = () => {
           businessId: APP_CONFIG.businessId,
           storeId: APP_CONFIG.storeId,
           reportType,
-          showDetails,
           startDate: reportType === 'custom' ? startDate : undefined,
           endDate: reportType === 'custom' ? endDate : undefined,
         },
       });
       setReportData(response.data);
+      setExpandedNodeIds((response.data.tree || []).map((node) => node.id));
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Unable to load store report.');
       setReportData(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleNode = (id: string) => {
+    setExpandedNodeIds((current) => {
+      if (current.includes(id)) {
+        return current.filter((value) => value !== id);
+      }
+      return [...current, id];
+    });
+  };
+
+  const formatNodeAmount = (node: StoreReportTreeNode) => {
+    const amountText = formatCurrency(node.subtotal);
+    if (node.nodeType === 'service') {
+      return `${node.label} (${amountText})`;
+    }
+    if (node.nodeType === 'month' || node.nodeType === 'today') {
+      return `${node.label}: Total ${amountText}`;
+    }
+    return `${node.label} (Subtotal: ${amountText})`;
+  };
+
+  const renderTreeNode = (node: StoreReportTreeNode, level: number) => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded = expandedNodeIds.includes(node.id);
+
+    return (
+      <View key={node.id}>
+        <Pressable
+          style={[styles.treeRow, { paddingLeft: 10 + level * 16 }]}
+          onPress={() => {
+            if (hasChildren) {
+              toggleNode(node.id);
+            }
+          }}
+        >
+          <Text style={styles.treeIndicator}>{hasChildren ? (isExpanded ? '▾' : '▸') : '•'}</Text>
+          <Text style={[styles.treeText, node.nodeType === 'month' || node.nodeType === 'today' ? styles.treeTopText : null]}>
+            {formatNodeAmount(node)}
+          </Text>
+        </Pressable>
+
+        {hasChildren && isExpanded
+          ? node.children.map((child) => renderTreeNode(child, level + 1))
+          : null}
+      </View>
+    );
   };
 
   return (
@@ -71,11 +118,6 @@ export const ReportByStoreScreen = () => {
             ))}
           </Picker>
         </View>
-
-        <Pressable style={styles.checkboxRow} onPress={() => setShowDetails((previous) => !previous)}>
-          <Text style={styles.checkbox}>{showDetails ? '☑' : '☐'}</Text>
-          <Text style={styles.checkboxLabel}>Show Details</Text>
-        </Pressable>
 
         {reportType === 'custom' ? (
           <View style={styles.customDateWrap}>
@@ -127,22 +169,11 @@ export const ReportByStoreScreen = () => {
             </Text>
             <Text style={styles.total}>Total Checkout Amount: {formatCurrency(reportData.totalAmount)}</Text>
 
-            {showDetails ? (
-              <View style={styles.detailsWrap}>
-                {reportData.technicianBreakdown.length ? (
-                  reportData.technicianBreakdown.map((item) => (
-                    <View key={item.technicianId} style={styles.detailRow}>
-                      <Text style={styles.detailName}>
-                        {item.firstName} {item.lastName}
-                      </Text>
-                      <Text style={styles.detailAmount}>{formatCurrency(item.subtotal)}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.empty}>No technician details for this report range.</Text>
-                )}
-              </View>
-            ) : null}
+            {reportData.tree.length ? (
+              <View style={styles.treeWrap}>{reportData.tree.map((node) => renderTreeNode(node, 0))}</View>
+            ) : (
+              <Text style={styles.empty}>No report records for this range.</Text>
+            )}
           </View>
         ) : null}
       </View>
@@ -181,22 +212,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#FFF9FD',
     marginBottom: 2,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 2,
-  },
-  checkbox: {
-    fontSize: 16,
-    color: '#374151',
-    width: 20,
-  },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '600',
   },
   customDateWrap: {
     gap: 8,
@@ -244,23 +259,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2F2F2F',
   },
-  detailsWrap: {
+  treeWrap: {
     gap: 6,
     marginTop: 4,
   },
-  detailRow: {
+  treeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 6,
+    paddingVertical: 2,
   },
-  detailName: {
+  treeIndicator: {
+    width: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  treeText: {
     fontSize: 14,
     color: '#374151',
+    flexShrink: 1,
   },
-  detailAmount: {
-    fontSize: 14,
+  treeTopText: {
     fontWeight: '700',
-    color: '#2F2F2F',
   },
   error: {
     color: '#D14343',

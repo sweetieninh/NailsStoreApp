@@ -140,15 +140,18 @@ export interface CheckoutResponse {
 
 export type StoreReportType = 'today' | 'week' | 'month' | 'custom';
 
+export interface StoreReportTreeNode {
+  id: string;
+  nodeType: 'today' | 'month' | 'week' | 'day' | 'technician' | 'customer' | 'service';
+  label: string;
+  subtotal: number;
+  children: StoreReportTreeNode[];
+}
+
 export interface StoreReportResponse {
   reportType: StoreReportType;
   from: string;
   to: string;
   totalAmount: number;
-  technicianBreakdown: Array<{
-    technicianId: string;
-    firstName: string;
-    lastName: string;
-    subtotal: number;
-  }>;
+  tree: StoreReportTreeNode[];
 }
